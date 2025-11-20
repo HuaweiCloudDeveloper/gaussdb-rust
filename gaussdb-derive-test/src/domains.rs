@@ -5,6 +5,7 @@ use gaussdb_test_helpers::*;
 use std::error::Error;
 
 #[test]
+#[ignore] // GaussDB doesn't support DOMAIN
 fn defaults() {
     #[derive(FromSql, ToSql, Debug, PartialEq)]
     struct SessionId(Vec<u8>);
@@ -31,6 +32,7 @@ fn defaults() {
 }
 
 #[test]
+#[ignore] // GaussDB doesn't support DOMAIN
 fn name_overrides() {
     #[derive(FromSql, ToSql, Debug, PartialEq)]
     #[gaussdb(name = "session_id")]
@@ -58,6 +60,7 @@ fn name_overrides() {
 }
 
 #[test]
+#[ignore] // GaussDB doesn't support DOMAIN
 fn wrong_name() {
     #[derive(FromSql, ToSql, Debug, PartialEq)]
     struct SessionId(Vec<u8>);
@@ -80,6 +83,7 @@ fn wrong_name() {
 }
 
 #[test]
+#[ignore] // GaussDB doesn't support DOMAIN
 fn wrong_type() {
     #[derive(FromSql, ToSql, Debug, PartialEq)]
     #[gaussdb(name = "session_id")]
@@ -103,6 +107,7 @@ fn wrong_type() {
 }
 
 #[test]
+#[ignore] // GaussDB doesn't support DOMAIN
 fn domain_in_composite() {
     #[derive(FromSql, ToSql, Debug, PartialEq)]
     #[gaussdb(name = "domain")]
