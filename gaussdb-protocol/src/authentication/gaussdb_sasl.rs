@@ -59,7 +59,7 @@ enum State {
 impl GaussDbScramSha256 {
     /// 创建新的 GaussDB 兼容 SCRAM-SHA-256 认证器
     pub fn new(password: &[u8], channel_binding: ChannelBinding) -> Self {
-        Self::new_with_compatibility(password, channel_binding, CompatibilityMode::Auto)
+        Self::new_with_compatibility(password, channel_binding, CompatibilityMode::GaussDb)
     }
 
     /// 创建指定兼容模式的认证器
@@ -256,9 +256,9 @@ impl<'a> GaussDbSaslParser<'a> {
                 }
             }
             CompatibilityMode::GaussDb | CompatibilityMode::Auto => {
-                // GaussDB 模式：忽略尾随的空白字符和控制字符
+                // GaussDB 模式：跳过尾随的空白字符和控制字符直到真正结束
                 while let Some(&(_, c)) = self.it.peek() {
-                    if c.is_whitespace() || c.is_control() {
+                    if c.is_whitespace() || c == '\0' || c.is_control() {
                         self.it.next();
                     } else {
                         return Err(io::Error::new(
@@ -348,6 +348,26 @@ impl<'a> GaussDbSaslParser<'a> {
         let salt = self.salt()?;
         self.eat(',')?;
         let iteration_count = self.iteration_count()?;
+        
+        // 在 GaussDB 模式下允许额外的数据（更宽松的处理）
+        if matches!(self.compatibility_mode, CompatibilityMode::GaussDb | CompatibilityMode::Auto) {
+            // 忽略任何额外的字段，直到EOF
+            while self.it.peek().is_some() {
+                // 检查是否是有效的字段格式（键=值）
+                let _pos = match self.it.peek() {
+                    Some(&(pos, _)) => pos,
+                    None => break,
+                };
+                
+                // 尝试解析字段
+                match self.try_parse_extra_field() {
+                    Ok(true) => continue, // 成功解析了一个额外字段
+                    Ok(false) => break,   // 不是额外字段格式，停止解析
+                    Err(_) => break,      // 解析出错，停止解析
+                }
+            }
+        }
+        
         self.eof()?;
 
         Ok(ServerFirstMessage {
@@ -355,6 +375,45 @@ impl<'a> GaussDbSaslParser<'a> {
             salt,
             iteration_count,
         })
+    }
+    
+    /// 尝试解析一个额外的字段（用于兼容 GaussDB 的扩展格式）
+    fn try_parse_extra_field(&mut self) -> io::Result<bool> {
+        // 保存当前位置以便回退
+        let saved_it = self.it.clone();
+        
+        // 尝试解析 "key=value" 格式
+        match self.take_while(|c| c.is_alphabetic() || c == '_') {
+            Ok(key) if !key.is_empty() => {
+                // 有键名，检查等号
+                if self.eat('=').is_ok() {
+                    // 有等号，尝试读取值
+                    match self.take_while(|c| c != ',' && c != '\0' && !c.is_control()) {
+                        Ok(_value) => {
+                            // 成功读取值，吃掉分隔符（如果有的话）
+                            if let Some(&(_, ',')) = self.it.peek() {
+                                self.it.next(); // 吃掉逗号
+                            }
+                            Ok(true) // 成功解析一个字段
+                        }
+                        Err(_) => {
+                            // 回退并返回false
+                            self.it = saved_it;
+                            Ok(false)
+                        }
+                    }
+                } else {
+                    // 没有等号，回退并返回false
+                    self.it = saved_it;
+                    Ok(false)
+                }
+            }
+            _ => {
+                // 没有有效键名，回退并返回false
+                self.it = saved_it;
+                Ok(false)
+            }
+        }
     }
 
     fn value(&mut self) -> io::Result<&'a str> {
@@ -383,6 +442,15 @@ impl<'a> GaussDbSaslParser<'a> {
             Some(error) => ServerFinalMessage::Error(error),
             None => ServerFinalMessage::Verifier(self.verifier()?),
         };
+        
+        // 在 GaussDB 模式下允许尾随数据
+        if matches!(self.compatibility_mode, CompatibilityMode::GaussDb | CompatibilityMode::Auto) {
+            // 消费所有剩余字符直到EOF
+            while self.it.peek().is_some() {
+                self.it.next();
+            }
+        }
+        
         self.eof()?;
         Ok(message)
     }
@@ -399,7 +467,9 @@ enum ServerFinalMessage<'a> {
     Verifier(&'a str),
 }
 
-// 从原始 sasl.rs 复制的辅助函数
+// since postgres passwords are not required to exclude saslprep-prohibited
+// characters or even be valid UTF8, we run saslprep if possible and otherwise
+// return the raw password.
 fn normalize(pass: &[u8]) -> Vec<u8> {
     let pass = match str::from_utf8(pass) {
         Ok(pass) => pass,

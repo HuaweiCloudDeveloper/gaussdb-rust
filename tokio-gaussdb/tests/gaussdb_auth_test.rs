@@ -28,7 +28,7 @@ async fn test_basic_connection() {
 
             let version: &str = rows[0].get(0);
             println!("Database version: {}", version);
-            assert!(version.contains("openGauss") || version.contains("PostgreSQL"));
+            assert!(version.contains("gaussdb") || version.contains("PostgreSQL"));
 
             // 清理连接
             drop(client);

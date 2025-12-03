@@ -2,7 +2,7 @@
 //!
 //! 这些测试验证 GaussDB SCRAM-SHA-256 兼容性修复在真实环境中的工作情况
 
-use tokio_gaussdb::{connect, NoTls, Config, Error};
+use tokio_gaussdb::{connect, NoTls, Config};
 use std::env;
 
 /// 获取测试连接配置

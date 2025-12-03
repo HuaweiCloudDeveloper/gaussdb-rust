@@ -427,9 +427,9 @@ async fn cancel_query_raw() {
     let socket = TcpStream::connect("113.44.80.136:8000").await.unwrap();
     let cancel_token = client.cancel_token();
     let cancel = cancel_token.cancel_query_raw(socket, NoTls);
-    let cancel = time::sleep(Duration::from_millis(100)).then(|()| cancel);
+    let cancel = time::sleep(Duration::from_millis(15)).then(|()| cancel);
 
-    let sleep = client.batch_execute("SELECT pg_sleep(100)");
+    let sleep = client.batch_execute("SELECT pg_sleep(10)");
 
     match join!(sleep, cancel) {
         (Err(ref e), Ok(())) if e.code() == Some(&SqlState::QUERY_CANCELED) => {}
